@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simple Weather App</title>
+  <style>
+    :root{font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; color:#111}
+    body{display:flex;min-height:100vh;align-items:center;justify-content:center;background:linear-gradient(180deg,#e6f0ff,#ffffff);margin:0;padding:24px}
+    .card{width:100%;max-width:520px;background:white;border-radius:12px;box-shadow:0 6px 24px rgba(20,30,60,0.08);padding:20px}
+    h1{margin:0 0 12px;font-size:20px}
+    form{display:flex;gap:8px;margin-bottom:12px}
+    input[type="text"]{flex:1;padding:10px 12px;border-radius:8px;border:1px solid #d6dbea;font-size:15px}
+    button{padding:10px 14px;border-radius:8px;border:0;background:#2563eb;color:#fff;font-weight:600;cursor:pointer}
+    .small{font-size:13px;color:#4b5563}
+    .result{margin-top:12px;padding:14px;border-radius:10px;background:#fbfbff;border:1px solid #eef2ff;display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center}
+    .icon{width:72px;height:72px}
+    .temp{font-size:28px;font-weight:700}
+    .meta{font-size:14px;color:#374151}
+    .error{color:#b91c1c;margin-top:8px}
+    .loader{display:inline-block;border:3px solid rgba(0,0,0,0.08);border-left-color:rgba(0,0,0,0.25);height:16px;width:16px;border-radius:50%;animation:spin 1s linear infinite;vertical-align:middle}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    footer{margin-top:12px;font-size:12px;color:#6b7280}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Simple Weather App</h1>
+    <p class="small">Type a city, town, or country (example: <em>Mumbai</em>, <em>New York</em>, <em>India</em>) and click <strong>Get Weather</strong>.</p>
+
+    <form id="weatherForm" onsubmit="return false;">
+      <input id="locationInput" type="text" placeholder="Enter location (city / country)" value="India" required />
+      <button id="getWeatherBtn">Get Weather</button>
+    </form>
+
+    <div id="status" class="small"></div>
+    <div id="output"></div>
+    <div id="error" class="error" role="alert" aria-live="polite"></div>
+
+    <footer>Notes: This example uses the API key you provided. Embedding API keys in client-side code is not secure for production — consider proxying requests through your own server.</footer>
+  </div>
+
+  <script>
+    // --------- CONFIG ---------
+    // You provided this key in the message. If you want to replace it, change the value here.
+    const API_KEY = '49de3705b17747ac8cd104744251509';
+    const BASE_URL = 'http://api.weatherapi.com/v1/current.json';
+
+    // --------- DOM ---------
+    const form = document.getElementById('weatherForm');
+    const input = document.getElementById('locationInput');
+    const btn = document.getElementById('getWeatherBtn');
+    const status = document.getElementById('status');
+    const output = document.getElementById('output');
+    const errorEl = document.getElementById('error');
+
+    async function getWeather(location) {
+      // clear previous
+      errorEl.textContent = '';
+      output.innerHTML = '';
+
+      status.innerHTML = '<span class="loader" aria-hidden="true"></span> Fetching...';
+
+      const url = `${BASE_URL}?key=${encodeURIComponent(API_KEY)}&q=${encodeURIComponent(location)}&aqi=yes`;
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(`API returned ${res.status} - ${txt}`);
+        }
+        const data = await res.json();
+        renderResult(data);
+      } catch (err) {
+        console.error(err);
+        errorEl.textContent = 'Could not fetch weather: ' + err.message;
+      } finally {
+        status.textContent = '';
+      }
+    }
+
+    function renderResult(data) {
+      if (!data || !data.location || !data.current) {
+        errorEl.textContent = 'Unexpected response from weather server.';
+        return;
+      }
+
+      const loc = data.location;
+      const cur = data.current;
+
+      const iconUrl = cur.condition && cur.condition.icon ? 'https:' + cur.condition.icon.replace(/^\//, '') : '';
+
+      output.innerHTML = `
+        <div class="result">
+          <div class="icon">${iconUrl ? `<img src="${iconUrl}" width="72" height="72" alt="${escapeHtml(cur.condition.text)}">` : ''}</div>
+          <div>
+            <div class="temp">${cur.temp_c}°C (${cur.temp_f}°F)</div>
+            <div class="meta">${escapeHtml(cur.condition.text)} · Local time: ${escapeHtml(loc.localtime)}</div>
+            <div class="small">Location: ${escapeHtml(loc.name)}, ${escapeHtml(loc.region || '')} ${loc.country ? ', ' + escapeHtml(loc.country) : ''}</div>
+            <div class="small">Feels like: ${cur.feelslike_c}°C · Humidity: ${cur.humidity}% · Wind: ${cur.wind_kph} kph</div>
+            ${renderAqi(cur.air_quality)}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderAqi(aqi) {
+      if (!aqi) return '';
+      // weatherapi returns aqi keys like 'us-epa-index' sometimes; show a few common measures if present
+      const parts = [];
+      if (aqi['pm2_5'] !== undefined) parts.push(`PM2.5: ${Math.round(aqi.pm2_5)}`);
+      if (aqi['pm10'] !== undefined) parts.push(`PM10: ${Math.round(aqi.pm10)}`);
+      if (aqi['us-epa-index'] !== undefined) parts.push(`AQI Index: ${aqi['us-epa-index']}`);
+      if (parts.length === 0) return '';
+      return `<div class="small">Air quality — ${parts.join(' · ')}</div>`;
+    }
+
+    function escapeHtml(s){
+      if (s === undefined || s === null) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // handle button click
+    btn.addEventListener('click', () => {
+      const loc = input.value.trim();
+      if (!loc) { errorEl.textContent = 'Please enter a location.'; return; }
+      getWeather(loc);
+    });
+
+    // support pressing Enter
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); btn.click(); }
+    });
+
+    // initial fetch for the default value
+    window.addEventListener('load', () => {
+      const initial = input.value.trim();
+      if (initial) getWeather(initial);
+    });
+  </script>
+</body>
+</html>
